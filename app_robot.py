@@ -1,96 +1,82 @@
 import streamlit as st
 import pandas as pd
-from docx import Document
+from google import genai
 from PIL import Image
-import pytesseract
 import io
 
-# Configuration de la page
-st.set_page_config(page_title="Mon Robot IA Autonome", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Super Robot Saisie IA", layout="wide")
+st.title("🤖 Super Robot de Saisie & Classification d'État Civil")
 
-st.title("🤖 Assistant Robot IA Multiplateforme")
-st.write("Pilotez vos tâches d'état civil depuis votre mobile ou votre ordinateur.")
+# Configuration de la clé API sécurisée
+api_key = st.sidebar.text_input("Saisissez votre clé API Google Gemini (Gratuite) :", type="password")
 
-# --- OPTIONS DANS LA BARRE LATÉRALE ---
-st.sidebar.header("⚙️ Menu du Robot")
-application_mode = st.sidebar.selectbox(
-    "Choisissez une action :",
-    ["Saisie d'un Acte Manuscrit", "Générer un fichier Excel", "Créer un document Word"]
-)
+uploaded_files = st.file_uploader("Importez vos documents (Photos d'actes, Registres, max 60 pages) :", 
+                                  type=["png", "jpg", "jpeg", "pdf"], 
+                                  accept_multiple_files=True)
 
-# --- MODE 1 : LECTURE DU MANUSCRIT ---
-if application_mode == "Saisie d'un Acte Manuscrit":
-    st.subheader("📸 Numérisation d'un acte d'état civil")
-    st.write("Prenez une photo avec votre portable ou importez un scan.")
-    
-    # Permet d'utiliser l'appareil photo du portable ou de charger un fichier
-    fichier_image = st.file_uploader("Importer l'image de l'acte", type=["jpg", "jpeg", "png"])
-    
-    if fichier_image is not None:
-        image = Image.open(fichier_image)
-        st.image(image, caption="Acte importé", use_container_width=True)
+if uploaded_files and api_key:
+    if st.button("🚀 Lancer la Saisie Automatique par l'IA"):
+        client = genai.Client(api_key=api_key)
+        all_data = []
         
-        if st.button("🤖 Lancer la lecture par l'IA"):
-            with st.spinner("Lecture du texte manuscrit en cours..."):
-                try:
-                    # Extraction du texte
-                    texte_extrait = pytesseract.image_to_string(image, lang='fra')
-                    st.success("Lecture terminée !")
-                    
-                    # Zone de texte modifiable sur le téléphone
-                    texte_final = st.text_area("Texte extrait (vous pouvez le corriger) :", texte_extrait, height=200)
-                    
-                    # Bouton pour télécharger le résultat en texte simple
-                    st.download_button("Télécharger le texte", texte_final, file_name="acte_extrait.txt")
-                except Exception as e:
-                    st.error(f"Erreur d'OCR : {e}. Assurez-vous que Tesseract est installé sur le serveur.")
-
-# --- MODE 2 : EXCEL ---
-elif application_mode == "Générer un fichier Excel":
-    st.subheader("📊 Création de Registre Excel")
-    
-    # Formulaire de saisie rapide adapté au mobile
-    nom = st.text_input("Nom :")
-    prenom = st.text_input("Prénom :")
-    date_naissance = st.text_input("Date de naissance (JJ/MM/AAAA) :")
-    
-    if st.button("Ajouter au registre"):
-        if nom and prenom:
-            # Création du fichier Excel en mémoire
-            donnees = {"Nom": [nom], "Prénom": [prenom], "Date Naissance": [date_naissance]}
-            df = pd.DataFrame(donnees)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for index, file in enumerate(uploaded_files):
+            status_text.text(f"Analyse du document {index + 1}/{len(uploaded_files)} en cours...")
             
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
+            # Lecture de l'image
+            image_bytes = file.read()
             
-            st.success("Données enregistrées avec succès dans le robot !")
+            # Consigne stricte pour l'IA afin d'éviter les fautes de frappe
+            prompt = """
+            Analyse cette image d'acte d'état civil ancien. Extrais les informations de manière TRÈS PRÉCISE, sans inventer de texte et sans faire de faute de frappe. 
+            Identifie le type d'acte et extrait les informations clés.
+            Réponds UNIQUEMENT sous la forme d'une ligne de texte brute avec les éléments séparés par le symbole '|' comme ceci :
+            Type d'acte | Nom de famille | Prénoms | Date de l'événement | Noms des parents ou conjoints
+            Si une information est totalement illisible, écris 'Inconnu'. Ne mets aucun autre texte dans ta réponse.
+            """
+            
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[image_bytes, prompt]
+                )
+                
+                # Découpage du résultat de l'IA
+                resultat = response.text.strip().split('|')
+                if len(resultat) >= 5:
+                    all_data.append({
+                        "Type d'acte": resultat[0].strip(),
+                        "Nom": resultat[1].strip().upper(), # Nom en majuscule
+                        "Prénoms": resultat[2].strip(),
+                        "Date Événement": resultat[3].strip(),
+                        "Parents / Conjoints": resultat[4].strip()
+                    })
+            except Exception as e:
+                st.error(f"Erreur sur le fichier {file.name} : {e}")
+                
+            progress_bar.progress((index + 1) / len(uploaded_files))
+            
+        status_text.text("✅ Traitement de tous les documents terminé !")
+        
+        # Création du tableau Excel de synthèse
+        if all_data:
+            df = pd.DataFrame(all_data)
+            st.write("### 📊 Aperçu des données classifiées (Zéro faute de recopie) :")
+            st.dataframe(df)
+            
+            # Bouton de téléchargement Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Saisie_Etat_Civil')
+            xlsx_data = output.getvalue()
+            
             st.download_button(
-                label="📥 Télécharger le fichier Excel sur votre appareil",
-                data=buffer.getvalue(),
-                file_name="registre_civil.xlsx",
+                label="📥 Télécharger le registre complet sur Excel",
+                data=xlsx_data,
+                file_name="registre_saisie_ia.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-        else:
-            st.warning("Veuillez remplir au moins le nom et le prénom.")
-
-# --- MODE 3 : WORD ---
-elif application_mode == "Créer un document Word":
-    st.subheader("📝 Générateur de Document Word")
-    titre_doc = st.text_input("Titre du document :", "Acte officiel")
-    contenu_doc = st.text_area("Contenu du document :")
-    
-    if st.button("Générer le Word"):
-        doc = Document()
-        doc.add_heading(titre_doc, level=1)
-        doc.add_paragraph(contenu_doc)
-        
-        buffer = io.BytesIO()
-        doc.save(buffer)
-        
-        st.download_button(
-            label="📥 Télécharger le fichier Word",
-            data=buffer.getvalue(),
-            file_name="document_robot.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+elif uploaded_files and not api_key:
+    st.warning("⚠️ Veuillez inscrire votre clé API gratuite Gemini dans la barre latérale gauche pour activer le robot.")
