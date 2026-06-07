@@ -1,6 +1,6 @@
 streamlit
 pandas
 openpyxl
-docx
+python-docx
 pytesseract
 pillow
