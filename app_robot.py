@@ -24,24 +24,23 @@ if uploaded_files and api_key:
         
         for index, file in enumerate(uploaded_files):
             status_text.text(f"Analyse du document {index + 1}/{len(uploaded_files)} en cours...")
-            # Lecture et conversion correcte de l'image pour Gemini
-image_bytes = file.read()
-image_pil = Image.open(io.BytesIO(image_bytes))
-
-prompt = """
-Analyse cette image d'acte d'état civil ancien. Extrais les informations de manière TRÈS PRÉCISE, sans inventer de texte et sans faire de faute de frappe. 
-Identifie le type d'acte et extrait les informations clés.
-Réponds UNIQUEMENT sous la forme d'une ligne de texte brute avec les éléments séparés par le symbole '|' comme ceci :
-Type d'acte | Nom de famille | Prénoms | Date de l'événement | Noms des parents ou conjoints
-Si une information est totalement illisible, écris 'Inconnu'. Ne mets aucun autre texte dans ta réponse.
-"""
-
-try:
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=[image_pil, prompt]
-    )
-
+            
+            try:
+                # Lecture et conversion de l'image
+                image_bytes = file.read()
+                image_pil = Image.open(io.BytesIO(image_bytes))
+                
+                prompt = """
+                Analyse cette image d'acte d'état civil ancien. Extrais les informations de manière TRÈS PRÉCISE, sans inventer de texte et sans faire de faute de frappe. 
+                Identifie le type d'acte et extrait les informations clés.
+                Réponds UNIQUEMENT sous la forme d'une ligne de texte brute avec les éléments séparés par le symbole '|' comme ceci :
+                Type d'acte | Nom de famille | Prénoms | Date de l'événement | Noms des parents ou conjoints
+                Si une information est totalement illisible, écris 'Inconnu'. Ne mets aucun autre texte dans ta réponse.
+                """
+                
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[image_pil, prompt]
                 )
                 
                 # Découpage du résultat de l'IA
@@ -49,7 +48,7 @@ try:
                 if len(resultat) >= 5:
                     all_data.append({
                         "Type d'acte": resultat[0].strip(),
-                        "Nom": resultat[1].strip().upper(), # Nom en majuscule
+                        "Nom": resultat[1].strip().upper(),
                         "Prénoms": resultat[2].strip(),
                         "Date Événement": resultat[3].strip(),
                         "Parents / Conjoints": resultat[4].strip()
@@ -61,13 +60,12 @@ try:
             
         status_text.text("✅ Traitement de tous les documents terminé !")
         
-        # Création du tableau Excel de synthèse
+        # Création du tableau Excel
         if all_data:
             df = pd.DataFrame(all_data)
             st.write("### 📊 Aperçu des données classifiées (Zéro faute de recopie) :")
             st.dataframe(df)
             
-            # Bouton de téléchargement Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Saisie_Etat_Civil')
