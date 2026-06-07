@@ -24,23 +24,24 @@ if uploaded_files and api_key:
         
         for index, file in enumerate(uploaded_files):
             status_text.text(f"Analyse du document {index + 1}/{len(uploaded_files)} en cours...")
-            
-            # Lecture de l'image
-            image_bytes = file.read()
-            
-            # Consigne stricte pour l'IA afin d'éviter les fautes de frappe
-            prompt = """
-            Analyse cette image d'acte d'état civil ancien. Extrais les informations de manière TRÈS PRÉCISE, sans inventer de texte et sans faire de faute de frappe. 
-            Identifie le type d'acte et extrait les informations clés.
-            Réponds UNIQUEMENT sous la forme d'une ligne de texte brute avec les éléments séparés par le symbole '|' comme ceci :
-            Type d'acte | Nom de famille | Prénoms | Date de l'événement | Noms des parents ou conjoints
-            Si une information est totalement illisible, écris 'Inconnu'. Ne mets aucun autre texte dans ta réponse.
-            """
-            
-            try:
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=[image_bytes, prompt]
+            # Lecture et conversion correcte de l'image pour Gemini
+image_bytes = file.read()
+image_pil = Image.open(io.BytesIO(image_bytes))
+
+prompt = """
+Analyse cette image d'acte d'état civil ancien. Extrais les informations de manière TRÈS PRÉCISE, sans inventer de texte et sans faire de faute de frappe. 
+Identifie le type d'acte et extrait les informations clés.
+Réponds UNIQUEMENT sous la forme d'une ligne de texte brute avec les éléments séparés par le symbole '|' comme ceci :
+Type d'acte | Nom de famille | Prénoms | Date de l'événement | Noms des parents ou conjoints
+Si une information est totalement illisible, écris 'Inconnu'. Ne mets aucun autre texte dans ta réponse.
+"""
+
+try:
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=[image_pil, prompt]
+    )
+
                 )
                 
                 # Découpage du résultat de l'IA
